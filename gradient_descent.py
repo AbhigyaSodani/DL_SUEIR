@@ -67,35 +67,41 @@ us_state = {
 }
 states=list(us_state.values())
 print(states)
-beta = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
-gamma = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
-sigma = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
-mu = torch.tensor(1e-3, dtype=torch.float, requires_grad=True)
-alpha = torch.tensor(2e-1, dtype=torch.float, requires_grad=True)
-rho = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
-theta = torch.tensor(1e-2, dtype=torch.float, requires_grad=True)
-a=torch.rand(50,3,1,dtype=torch.float,requires_grad=True)
-torch.div(a,1000)
-s0 = torch.tensor(1, dtype=torch.float, requires_grad=True)
-e0 = torch.tensor(1e1, dtype=torch.float, requires_grad=True)
-i0 = torch.tensor(1, dtype=torch.float, requires_grad=True)
 
-optimizer = SGD([
-    {'params': beta, 'lr': 1e-5},
-    {'params': gamma, 'lr': 1e-5},
-    {'params': sigma, 'lr': 1e-5},
-    {'params': mu, 'lr': 1e-8},
-    {'params': alpha, 'lr': 1e-5},
-    {'params': s0, 'lr': 1e-4},
-    {'params': e0, 'lr': 1e-4},
-    {'params': i0, 'lr': 1e-4},
-    {'params':a,'lr':1e-4}
-])
 
-All_E=[[0]*200]*50
+All_E=[]
+for x in range (50):
+    All_E.append([])
+    for y in range (200):
+        All_E[x].append(0)
 #print(All_E)
 
 def train_state(state_num,features):
+    print(state_num)
+    beta = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
+    gamma = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
+    sigma = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
+    mu = torch.tensor(1e-3, dtype=torch.float, requires_grad=True)
+    alpha = torch.tensor(2e-1, dtype=torch.float, requires_grad=True)
+    rho = torch.tensor(1e-1, dtype=torch.float, requires_grad=True)
+    theta = torch.tensor(1e-2, dtype=torch.float, requires_grad=True)
+    a=torch.rand(50,3,1,dtype=torch.float,requires_grad=True)
+    torch.div(a,1000)
+    s0 = torch.tensor(1, dtype=torch.float, requires_grad=True)
+    e0 = torch.tensor(1e1, dtype=torch.float, requires_grad=True)
+    i0 = torch.tensor(1, dtype=torch.float, requires_grad=True)
+
+    optimizer = SGD([
+        {'params': beta, 'lr': 1e-5},
+        {'params': gamma, 'lr': 1e-5},
+        {'params': sigma, 'lr': 1e-5},
+        {'params': mu, 'lr': 1e-8},
+        {'params': alpha, 'lr': 1e-5},
+        {'params': s0, 'lr': 1e-4},
+        {'params': e0, 'lr': 1e-4},
+        {'params': i0, 'lr': 1e-4},
+        {'params':a,'lr':1e-4}
+    ])
     torch.autograd.set_detect_anomaly(True)
     features=torch.from_numpy(features)
     confirm, death = data1.get('2020-03-31', '2020-06-01', states[state_num].lower()) 
@@ -105,44 +111,55 @@ def train_state(state_num,features):
     E = [torch.tensor(0) for _ in range(size)]
     I = [torch.tensor(0) for _ in range(size)]
     R = [torch.tensor(0) for _ in range(size)]
-    file=open(str(states[state_num])+".txt","a")
+    #file=open(str(states[state_num])+".txt","a")
    
-    for j in range(1000):
+    for j in range(100):
         deltas=torch.matmul(features.double(),a[state_num].double())
         #print(deltas)
         optimizer.zero_grad()
         S[0], E[0], I[0], R[0] = s0 * N, e0 * confirm[0], i0 * confirm[0], (1 - i0) * confirm[0]
+       
         All_E[state_num][0]=E[0]
-      
+        
         loss = 0
         smooth = 0
         for i in range(size - 1):
             # go for next
+            
             S[i+1] = S[i] - beta * S[i] * (E[i] + I[i]) / N
            
             connection_sum=0
-            for j in range(0,50):
+            for k in range(0,50):
                 #print("thing",All_E[j][i]-All_E[j][i-1])
-                connection_sum+=deltas[j]*(All_E[j][i])
-            #print(connection_sum)
+                #print("ref",All_E[k][i])
+                connection_sum+=deltas[k]*(All_E[k][i])
+      
             #input()
-            E[i+1] =E[i] + beta * S[i] * (E[i] + I[i]) / N - sigma * E[i]
-            All_E[state_num][i+1]=E[i+1]
+            #print(connection_sum)
+            E[i+1] = connection_sum+E[i] + beta * S[i] * (E[i] + I[i]) / N - sigma * E[i]
+            #All_E[state_num][i+1]=E[i+1]
             I[i+1] = I[i] + mu * sigma * E[i] - gamma * I[i]
             R[i+1] = R[i] + gamma * I[i]
           
             
             loss += torch.reshape(torch.square(1 - (I[i+1] + R[i+1]) / (confirm[i + 1])),())
-            
+        """    
+        if(state_num==0):
+            print(All_E)
+            f=open("all_E.pkl","wb")
+            pickle.dump(All_E,f)
+        input()    
+        """
         loss /= size
         print("Backprop for",states[state_num],"epoch",str(j))
-        loss.backward()
+        loss.backward(retain_graph=True)
         optimizer.step()
-        
+        print(str(loss.item()))
         if j % 100 == 99:
-            #print('=' * 10, 'Round {} '.format(j), '=' * 10)
-            file.write("Epoch"+str(j)+"for state"+states[state_num]+"\n")
-            file.write(str(loss.item())+"\n")
+            print('=' * 10, 'Round {} '.format(j), '=' * 10)
+            print(str(loss.item()))
+            #file.write("Epoch"+str(j)+"for state"+states[state_num]+"\n")
+            #file.write(str(loss.item())+"\n")
             """
             print('beta: ', beta.item(), beta.grad.item())
             print('gamma: ', gamma.item(), gamma.grad.item())
@@ -156,11 +173,18 @@ def train_state(state_num,features):
             print('i0: ', i0.item(), i0.grad.item())
         
             """
-    file.close()
+    #file.close()
 threads=[None]*50
 arr_pickle = open ("features.pkl", "rb")
 features = pickle.load(arr_pickle)
 
-for i in range(0,50):    
+for i in range(0,10):    
     threads[i] = threading.Thread(target=train_state, args=(i,features[i]))
-    threads[i].start()
+    threads[i].start()  
+"""  
+
+threads[0] = threading.Thread(target=train_state, args=(0,features[0]))
+threads[0].start()  
+threads[1] = threading.Thread(target=train_state, args=(1,features[1]))
+threads[1].start()  
+"""
